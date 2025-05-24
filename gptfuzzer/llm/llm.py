@@ -11,18 +11,43 @@ from anthropic import Anthropic, HUMAN_PROMPT, AI_PROMPT
 
 
 class LLM:
+    """
+    Lớp cơ sở cho tất cả các mô hình ngôn ngữ lớn (LLM).
+    Định nghĩa các phương thức chung mà tất cả các LLM cần triển khai.
+    """
     def __init__(self):
+        """
+        Khởi tạo đối tượng LLM với các thuộc tính cơ bản.
+        """
         self.model = None
         self.tokenizer = None
 
     def generate(self, prompt):
+        """
+        Phương thức trừu tượng để tạo ra phản hồi từ prompt.
+        Cần được triển khai bởi các lớp con.
+        
+        Args:
+            prompt: Chuỗi prompt đầu vào
+        """
         raise NotImplementedError("LLM must implement generate method.")
 
     def predict(self, sequences):
+        """
+        Phương thức trừu tượng để dự đoán kết quả từ chuỗi đầu vào.
+        Cần được triển khai bởi các lớp con.
+        
+        Args:
+            sequences: Danh sách các chuỗi đầu vào
+        """
         raise NotImplementedError("LLM must implement predict method.")
 
 
 class LocalLLM(LLM):
+    """
+    Lớp đại diện cho mô hình ngôn ngữ lớn chạy cục bộ.
+    Sử dụng thư viện FastChat để tải và chạy mô hình.
+    """
     def __init__(self,
                  model_path,
                  device='cuda',
@@ -35,6 +60,21 @@ class LocalLLM(LLM):
                  debug=False,
                  system_message=None
                  ):
+        """
+        Khởi tạo mô hình LLM cục bộ.
+        
+        Args:
+            model_path: Đường dẫn đến mô hình
+            device: Thiết bị để chạy mô hình ('cuda' hoặc 'cpu')
+            num_gpus: Số lượng GPU sử dụng
+            max_gpu_memory: Bộ nhớ GPU tối đa sử dụng
+            dtype: Kiểu dữ liệu của mô hình
+            load_8bit: Có tải mô hình ở định dạng 8-bit hay không
+            cpu_offloading: Có sử dụng CPU offloading hay không
+            revision: Phiên bản của mô hình
+            debug: Chế độ gỡ lỗi
+            system_message: Thông điệp hệ thống tùy chỉnh
+        """
         super().__init__()
 
         self.model, self.tokenizer = self.create_model(
@@ -51,7 +91,7 @@ class LocalLLM(LLM):
         self.model_path = model_path
 
         if system_message is None and 'Llama-2' in model_path:
-            # monkey patch for latest FastChat to use llama2's official system message
+            # Sửa đổi cho FastChat mới nhất để sử dụng thông điệp hệ thống chính thức của Llama-2
             self.system_message = "You are a helpful, respectful and honest assistant. Always answer as helpfully as possible, while being safe. " \
             "Your answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content. " \
             "Please ensure that your responses are socially unbiased and positive in nature.\n\n" \
@@ -70,6 +110,23 @@ class LocalLLM(LLM):
                      cpu_offloading=False,
                      revision=None,
                      debug=False):
+        """
+        Tạo và tải mô hình từ đường dẫn.
+        
+        Args:
+            model_path: Đường dẫn đến mô hình
+            device: Thiết bị để chạy mô hình
+            num_gpus: Số lượng GPU sử dụng
+            max_gpu_memory: Bộ nhớ GPU tối đa sử dụng
+            dtype: Kiểu dữ liệu của mô hình
+            load_8bit: Có tải mô hình ở định dạng 8-bit hay không
+            cpu_offloading: Có sử dụng CPU offloading hay không
+            revision: Phiên bản của mô hình
+            debug: Chế độ gỡ lỗi
+            
+        Returns:
+            Tuple (model, tokenizer) chứa mô hình và tokenizer đã tải
+        """
         model, tokenizer = load_model(
             model_path,
             device,
@@ -85,11 +142,29 @@ class LocalLLM(LLM):
         return model, tokenizer
 
     def set_system_message(self, conv_temp):
+        """
+        Đặt thông điệp hệ thống cho mẫu hội thoại.
+        
+        Args:
+            conv_temp: Mẫu hội thoại cần đặt thông điệp hệ thống
+        """
         if self.system_message is not None:
             conv_temp.set_system_message(self.system_message)
 
     @torch.inference_mode()
     def generate(self, prompt, temperature=0.01, max_tokens=512, repetition_penalty=1.0):
+        """
+        Tạo phản hồi từ prompt đầu vào.
+        
+        Args:
+            prompt: Chuỗi prompt đầu vào
+            temperature: Nhiệt độ để kiểm soát tính ngẫu nhiên (càng thấp càng xác định)
+            max_tokens: Số lượng token tối đa trong phản hồi
+            repetition_penalty: Hệ số phạt cho việc lặp lại
+            
+        Returns:
+            Chuỗi phản hồi được tạo ra
+        """
         conv_temp = get_conversation_template(self.model_path)
         self.set_system_message(conv_temp)
 
@@ -117,6 +192,19 @@ class LocalLLM(LLM):
 
     @torch.inference_mode()
     def generate_batch(self, prompts, temperature=0.01, max_tokens=512, repetition_penalty=1.0, batch_size=16):
+        """
+        Tạo phản hồi cho một loạt các prompt đầu vào.
+        
+        Args:
+            prompts: Danh sách các prompt đầu vào
+            temperature: Nhiệt độ để kiểm soát tính ngẫu nhiên
+            max_tokens: Số lượng token tối đa trong mỗi phản hồi
+            repetition_penalty: Hệ số phạt cho việc lặp lại
+            batch_size: Kích thước lô để xử lý
+            
+        Returns:
+            Danh sách các phản hồi tương ứng với các prompt
+        """
         prompt_inputs = []
         for prompt in prompts:
             conv_temp = get_conversation_template(self.model_path)
@@ -132,7 +220,7 @@ class LocalLLM(LLM):
             self.tokenizer.pad_token = self.tokenizer.eos_token
         self.tokenizer.padding_side = "left"
         input_ids = self.tokenizer(prompt_inputs, padding=True).input_ids
-        # load the input_ids batch by batch to avoid OOM
+        # Tải input_ids theo lô để tránh hết bộ nhớ (OOM)
         outputs = []
         for i in range(0, len(input_ids), batch_size):
             output_ids = self.model.generate(
@@ -149,18 +237,30 @@ class LocalLLM(LLM):
 
 
 class LocalVLLM(LLM):
+    """
+    Lớp đại diện cho mô hình ngôn ngữ lớn chạy cục bộ sử dụng thư viện vLLM.
+    vLLM cung cấp hiệu suất cao hơn cho việc suy luận với mô hình LLM.
+    """
     def __init__(self,
                  model_path,
                  gpu_memory_utilization=0.95,
                  system_message=None
                  ):
+        """
+        Khởi tạo mô hình vLLM cục bộ.
+        
+        Args:
+            model_path: Đường dẫn đến mô hình
+            gpu_memory_utilization: Tỷ lệ sử dụng bộ nhớ GPU
+            system_message: Thông điệp hệ thống tùy chỉnh
+        """
         super().__init__()
         self.model_path = model_path
         self.model = vllm(
             self.model_path, gpu_memory_utilization=gpu_memory_utilization)
         
         if system_message is None and 'Llama-2' in model_path:
-            # monkey patch for latest FastChat to use llama2's official system message
+            # Sửa đổi cho FastChat mới nhất để sử dụng thông điệp hệ thống chính thức của Llama-2
             self.system_message = "You are a helpful, respectful and honest assistant. Always answer as helpfully as possible, while being safe. " \
             "Your answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content. " \
             "Please ensure that your responses are socially unbiased and positive in nature.\n\n" \
@@ -170,14 +270,42 @@ class LocalVLLM(LLM):
             self.system_message = system_message
 
     def set_system_message(self, conv_temp):
+        """
+        Đặt thông điệp hệ thống cho mẫu hội thoại.
+        
+        Args:
+            conv_temp: Mẫu hội thoại cần đặt thông điệp hệ thống
+        """
         if self.system_message is not None:
             conv_temp.set_system_message(self.system_message)
 
     def generate(self, prompt, temperature=0, max_tokens=512):
+        """
+        Tạo phản hồi từ prompt đầu vào sử dụng vLLM.
+        
+        Args:
+            prompt: Chuỗi prompt đầu vào
+            temperature: Nhiệt độ để kiểm soát tính ngẫu nhiên
+            max_tokens: Số lượng token tối đa trong phản hồi
+            
+        Returns:
+            Chuỗi phản hồi được tạo ra
+        """
         prompts = [prompt]
         return self.generate_batch(prompts, temperature, max_tokens)
 
     def generate_batch(self, prompts, temperature=0, max_tokens=512):
+        """
+        Tạo phản hồi cho một loạt các prompt đầu vào sử dụng vLLM.
+        
+        Args:
+            prompts: Danh sách các prompt đầu vào
+            temperature: Nhiệt độ để kiểm soát tính ngẫu nhiên
+            max_tokens: Số lượng token tối đa trong mỗi phản hồi
+            
+        Returns:
+            Danh sách các phản hồi tương ứng với các prompt
+        """
         prompt_inputs = []
         for prompt in prompts:
             conv_temp = get_conversation_template(self.model_path)
@@ -199,15 +327,37 @@ class LocalVLLM(LLM):
 
 
 class BardLLM(LLM):
+    """
+    Lớp đại diện cho mô hình Bard của Google.
+    Hiện tại chỉ có phương thức generate trống.
+    """
     def generate(self, prompt):
+        """
+        Phương thức chưa được triển khai cho Bard.
+        
+        Args:
+            prompt: Chuỗi prompt đầu vào
+        """
         return
 
 class PaLM2LLM(LLM):
+    """
+    Lớp đại diện cho mô hình PaLM 2 của Google.
+    Sử dụng API PaLM để tạo phản hồi.
+    """
     def __init__(self,
                  model_path='chat-bison-001',
                  api_key=None,
                  system_message=None
                 ):
+        """
+        Khởi tạo mô hình PaLM 2.
+        
+        Args:
+            model_path: Tên mô hình PaLM 2 (mặc định là 'chat-bison-001')
+            api_key: Khóa API để truy cập PaLM 2
+            system_message: Thông điệp hệ thống tùy chỉnh
+        """
         super().__init__()
         
         if len(api_key) != 39:
@@ -220,9 +370,22 @@ class PaLM2LLM(LLM):
                 self.model_path = model
                 break
         self.system_message = system_message
-        # The PaLM-2 has a great rescriction on the number of input tokens, so I will release the short jailbreak prompts later
+        # PaLM-2 có giới hạn lớn về số lượng token đầu vào, vì vậy tôi sẽ phát hành các prompt jailbreak ngắn sau này
         
     def generate(self, prompt, temperature=0, n=1, max_trials=1, failure_sleep_time=1):
+        """
+        Tạo phản hồi từ prompt đầu vào sử dụng PaLM 2.
+        
+        Args:
+            prompt: Chuỗi prompt đầu vào
+            temperature: Nhiệt độ để kiểm soát tính ngẫu nhiên
+            n: Số lượng phản hồi cần tạo
+            max_trials: Số lần thử lại tối đa khi gặp lỗi
+            failure_sleep_time: Thời gian chờ (giây) giữa các lần thử lại
+            
+        Returns:
+            Danh sách các phản hồi được tạo ra
+        """
         for _ in range(max_trials):
             try:
                 results = palm.chat(
@@ -240,6 +403,19 @@ class PaLM2LLM(LLM):
         return [" " for _ in range(n)]
     
     def generate_batch(self, prompts, temperature=0, n=1, max_trials=1, failure_sleep_time=1):
+        """
+        Tạo phản hồi cho một loạt các prompt đầu vào sử dụng PaLM 2.
+        
+        Args:
+            prompts: Danh sách các prompt đầu vào
+            temperature: Nhiệt độ để kiểm soát tính ngẫu nhiên
+            n: Số lượng phản hồi cần tạo cho mỗi prompt
+            max_trials: Số lần thử lại tối đa khi gặp lỗi
+            failure_sleep_time: Thời gian chờ (giây) giữa các lần thử lại
+            
+        Returns:
+            Danh sách các phản hồi tương ứng với các prompt
+        """
         results = []
         with concurrent.futures.ThreadPoolExecutor() as executor:
             futures = {executor.submit(self.generate, prompt, temperature, n,
@@ -249,10 +425,21 @@ class PaLM2LLM(LLM):
         return results
 
 class ClaudeLLM(LLM):
+    """
+    Lớp đại diện cho mô hình Claude của Anthropic.
+    Sử dụng API Anthropic để tạo phản hồi.
+    """
     def __init__(self,
                  model_path='claude-instant-1.2',
                  api_key=None
                 ):
+        """
+        Khởi tạo mô hình Claude.
+        
+        Args:
+            model_path: Tên mô hình Claude (mặc định là 'claude-instant-1.2')
+            api_key: Khóa API để truy cập Claude
+        """
         super().__init__()
         
         if len(api_key) != 108:
@@ -265,6 +452,18 @@ class ClaudeLLM(LLM):
         )
 
     def generate(self, prompt, max_tokens=512, max_trials=1, failure_sleep_time=1):
+        """
+        Tạo phản hồi từ prompt đầu vào sử dụng Claude.
+        
+        Args:
+            prompt: Chuỗi prompt đầu vào
+            max_tokens: Số lượng token tối đa trong phản hồi
+            max_trials: Số lần thử lại tối đa khi gặp lỗi
+            failure_sleep_time: Thời gian chờ (giây) giữa các lần thử lại
+            
+        Returns:
+            Danh sách chứa phản hồi được tạo ra
+        """
         
         for _ in range(max_trials):
             try:
@@ -282,6 +481,18 @@ class ClaudeLLM(LLM):
         return [" "]
     
     def generate_batch(self, prompts, max_tokens=512, max_trials=1, failure_sleep_time=1):
+        """
+        Tạo phản hồi cho một loạt các prompt đầu vào sử dụng Claude.
+        
+        Args:
+            prompts: Danh sách các prompt đầu vào
+            max_tokens: Số lượng token tối đa trong mỗi phản hồi
+            max_trials: Số lần thử lại tối đa khi gặp lỗi
+            failure_sleep_time: Thời gian chờ (giây) giữa các lần thử lại
+            
+        Returns:
+            Danh sách các phản hồi tương ứng với các prompt
+        """
         results = []
         with concurrent.futures.ThreadPoolExecutor() as executor:
             futures = {executor.submit(self.generate, prompt, max_tokens,
@@ -291,11 +502,23 @@ class ClaudeLLM(LLM):
         return results
 
 class OpenAILLM(LLM):
+    """
+    Lớp đại diện cho mô hình OpenAI (GPT-3.5, GPT-4).
+    Sử dụng API OpenAI để tạo phản hồi.
+    """
     def __init__(self,
                  model_path,
                  api_key=None,
                  system_message=None
                 ):
+        """
+        Khởi tạo mô hình OpenAI.
+        
+        Args:
+            model_path: Tên mô hình OpenAI ('gpt-3.5-turbo' hoặc 'gpt-4')
+            api_key: Khóa API để truy cập OpenAI
+            system_message: Thông điệp hệ thống tùy chỉnh
+        """
         super().__init__()
 
         if not api_key.startswith('sk-'):
@@ -308,6 +531,20 @@ class OpenAILLM(LLM):
         self.system_message = system_message if system_message is not None else "You are a helpful assistant."
 
     def generate(self, prompt, temperature=0, max_tokens=512, n=1, max_trials=10, failure_sleep_time=5):
+        """
+        Tạo phản hồi từ prompt đầu vào sử dụng OpenAI.
+        
+        Args:
+            prompt: Chuỗi prompt đầu vào
+            temperature: Nhiệt độ để kiểm soát tính ngẫu nhiên
+            max_tokens: Số lượng token tối đa trong phản hồi
+            n: Số lượng phản hồi cần tạo
+            max_trials: Số lần thử lại tối đa khi gặp lỗi
+            failure_sleep_time: Thời gian chờ (giây) giữa các lần thử lại
+            
+        Returns:
+            Danh sách các phản hồi được tạo ra
+        """
         for _ in range(max_trials):
             try:
                 results = self.client.chat.completions.create(
@@ -329,6 +566,20 @@ class OpenAILLM(LLM):
         return [" " for _ in range(n)]
 
     def generate_batch(self, prompts, temperature=0, max_tokens=512, n=1, max_trials=10, failure_sleep_time=5):
+        """
+        Tạo phản hồi cho một loạt các prompt đầu vào sử dụng OpenAI.
+        
+        Args:
+            prompts: Danh sách các prompt đầu vào
+            temperature: Nhiệt độ để kiểm soát tính ngẫu nhiên
+            max_tokens: Số lượng token tối đa trong mỗi phản hồi
+            n: Số lượng phản hồi cần tạo cho mỗi prompt
+            max_trials: Số lần thử lại tối đa khi gặp lỗi
+            failure_sleep_time: Thời gian chờ (giây) giữa các lần thử lại
+            
+        Returns:
+            Danh sách các phản hồi tương ứng với các prompt
+        """
         results = []
         with concurrent.futures.ThreadPoolExecutor() as executor:
             futures = {executor.submit(self.generate, prompt, temperature, max_tokens, n,

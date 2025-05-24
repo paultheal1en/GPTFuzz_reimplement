@@ -1,0 +1,4 @@
+iteration,num_mutants,num_jailbreaks,num_rejects,num_queries
+1,0,0,1,1
+2,0,0,2,2
+3,1,1,2,3

@@ -108,6 +108,11 @@ class GPTFuzzer:
         self.writter.writerow(
             ['index', 'prompt', 'response', 'parent', 'results'])
 
+        # >>> Thêm file log riêng cho mỗi iteration
+        self.iter_log_fp = open(result_file.replace('.csv', '_iter_log.csv'), 'w', buffering=1)
+        self.iter_log_writer = csv.writer(self.iter_log_fp)
+        self.iter_log_writer.writerow(['iteration', 'num_mutants', 'num_jailbreaks', 'num_rejects', 'num_queries'])
+
         self.generate_in_batch = False
         if len(self.questions) > 0 and generate_in_batch is True:
             self.generate_in_batch = True
@@ -118,8 +123,14 @@ class GPTFuzzer:
     def setup(self):
         self.mutate_policy.fuzzer = self
         self.select_policy.fuzzer = self
-        logging.basicConfig(
-            level=logging.INFO, format='%(asctime)s %(message)s', datefmt='[%H:%M:%S]')
+        logger = logging.getLogger()
+        logger.setLevel(logging.INFO)
+
+        if not logger.handlers:
+            handler = logging.StreamHandler()
+            formatter = logging.Formatter('[%(asctime)s] %(message)s', datefmt='%H:%M:%S')
+            handler.setFormatter(formatter)
+            logger.addHandler(handler)
 
     def is_stop(self):
         checks = [
@@ -144,6 +155,7 @@ class GPTFuzzer:
 
         logging.info("Fuzzing finished!")
         self.raw_fp.close()
+        self.iter_log_fp.close()  # <<< Đóng file log iteration
 
     def evaluate(self, prompt_nodes: 'list[PromptNode]'):
         for prompt_node in prompt_nodes:
@@ -151,14 +163,13 @@ class GPTFuzzer:
             messages = []
             for question in self.questions:
                 message = synthesis_message(question, prompt_node.prompt)
-                if message is None:  # The prompt is not valid
+                if message is None:
                     prompt_node.response = []
                     prompt_node.results = []
                     break
                 if not self.generate_in_batch:
                     response = self.target.generate(message)
-                    responses.append(response[0] if isinstance(
-                        response, list) else response)
+                    responses.append(response[0] if isinstance(response, list) else response)
                 else:
                     messages.append(message)
             else:
@@ -174,8 +185,13 @@ class GPTFuzzer:
             if prompt_node.num_jailbreak > 0:
                 prompt_node.index = len(self.prompt_nodes)
                 self.prompt_nodes.append(prompt_node)
-                self.writter.writerow([prompt_node.index, prompt_node.prompt,
-                                       prompt_node.response, prompt_node.parent.index, prompt_node.results])
+                self.writter.writerow([
+                    prompt_node.index,
+                    prompt_node.prompt,
+                    prompt_node.response,
+                    prompt_node.parent.index if prompt_node.parent else -1,
+                    prompt_node.results
+                ])
 
             self.current_jailbreak += prompt_node.num_jailbreak
             self.current_query += prompt_node.num_query
@@ -184,5 +200,13 @@ class GPTFuzzer:
         self.select_policy.update(prompt_nodes)
 
     def log(self):
+        num_mutants = len(self.prompt_nodes) - len(self.initial_prompts_nodes)
         logging.info(
             f"Iteration {self.current_iteration}: {self.current_jailbreak} jailbreaks, {self.current_reject} rejects, {self.current_query} queries")
+        self.iter_log_writer.writerow([
+            self.current_iteration,
+            num_mutants,
+            self.current_jailbreak,
+            self.current_reject,
+            self.current_query
+        ])
